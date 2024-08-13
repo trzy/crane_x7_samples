@@ -3,8 +3,12 @@
 //
 
 #include <fcntl.h>
+#ifdef _WIN32
+#include <conio.h>
+#else
 #include <termios.h>
 #define STDIN_FILENO 0
+#endif
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -28,7 +32,7 @@
 #define PROTOCOL_VERSION                2.0                 // Dynamixel通信プロトコル
 
 // Default setting
-#define BAUDRATE                        3000000				// サーボの通信レート
+#define BAUDRATE                        57600				// サーボの通信レート
 #define DEVICENAME                      "/dev/ttyUSB0"		// PCに接続しているポート
 // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 
@@ -54,8 +58,11 @@ double value2deg( double value){ return value * 360 / 4096 - 180; }		// valueをd
  * @brief	キーボード入力用の関数(Dynamixel SDK sample)
  * @return	getchar() キー入力
 */
-int getch()		
+int getch()
 {
+#ifdef _WIN32
+  return _getch();
+#else
 	struct termios oldt, newt;
 	int ch;
 	tcgetattr(STDIN_FILENO, &oldt);
@@ -65,6 +72,7 @@ int getch()
 	ch = getchar();
 	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
 	return ch;
+#endif
 }
 
 /**
@@ -92,7 +100,7 @@ class CR7 {
 	// 複数サーボの読み込み用関数の呼び出し(Dynamixel SDK)
 	dynamixel::GroupBulkRead *groupBulkRead;
 
-	CR7();		//コンストラクタ
+	CR7(const char *port);		//コンストラクタ
 
 	//各種エラー出力用変数
 	int dxl_comm_result;             // Communication result
@@ -102,9 +110,9 @@ class CR7 {
 
 	uint8_t param_goal_position[4];		//通信パケット用に変換したgoal_positionの変数
 	uint8_t param_value[4];				//通信パケット用に変換したvalueの変数
-	
+
 	int32_t dxl_present_position;		//サーボの現在位置取得用の変数
-	
+
 	//　play back用テキストデータの定義
 	FILE *fp;
 	const char *fname = "data.txt";
@@ -123,8 +131,8 @@ class CR7 {
 /**
  * @brief コンストラクタ
  */
-CR7::CR7(){
-	portHandler = dynamixel::PortHandler::getPortHandler(DEVICENAME);
+CR7::CR7(const char *port){
+	portHandler = dynamixel::PortHandler::getPortHandler(port);
 	packetHandler = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
 	groupBulkWrite = new dynamixel::GroupBulkWrite( portHandler, packetHandler);
 	groupBulkRead = new dynamixel::GroupBulkRead( portHandler, packetHandler);
@@ -200,7 +208,7 @@ void CR7::Enable_Dynamixel_Torque(){
 		printf(" ]\n");
 	}
 
-	// Bulkwrite goal position 
+	// Bulkwrite goal position
 	dxl_comm_result = groupBulkWrite->txPacket();
 	if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
 
@@ -217,7 +225,7 @@ void CR7::Disable_Dynamixel_Torque(){
 	for(int i=0;i<JOINT_NUM;i++)
 		dxl_comm_result = packetHandler->write1ByteTxRx(portHandler, ID[i], ADDR_PRO_TORQUE_ENABLE, TORQUE_DISABLE, &dxl_error);		//該当IDのサーボのトルク管理のアドレスにOFFを書き込む
 
-	// Bulkwrite goal position 
+	// Bulkwrite goal position
 	dxl_comm_result = groupBulkWrite->txPacket();
 	if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
 
@@ -248,8 +256,8 @@ void CR7::Move_Goal_Position( double *goal_pose){
 		if(dxl_addparam_result != true) printf("goal pose error!\n");
 
 	}printf("\n");
-	
-	// Bulkwrite goal position 
+
+	// Bulkwrite goal position
 	dxl_comm_result = groupBulkWrite->txPacket();
 	if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
 
@@ -263,7 +271,7 @@ void CR7::Move_Goal_Position( double *goal_pose){
  */
 void CR7::Move_Offset_Position(){
 	// Move offset position
-	for(int i=0;i<JOINT_NUM;i++){ 
+	for(int i=0;i<JOINT_NUM;i++){
 		param_goal_position[0] = DXL_LOBYTE(DXL_LOWORD(DXL_CENTER_POSITION_VALUE));														//通信用にデータを分ける
 		param_goal_position[1] = DXL_HIBYTE(DXL_LOWORD(DXL_CENTER_POSITION_VALUE));
 		param_goal_position[2] = DXL_LOBYTE(DXL_HIWORD(DXL_CENTER_POSITION_VALUE));
@@ -273,7 +281,7 @@ void CR7::Move_Offset_Position(){
 	}
 	if(dxl_addparam_result != true) printf("offset error!\n");
 
-	// Bulkwrite goal position 
+	// Bulkwrite goal position
 	dxl_comm_result = groupBulkWrite->txPacket();
 	if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
 
@@ -301,7 +309,7 @@ bool CR7::Teaching_Play_Frame(){
 			dxl_addparam_result = groupBulkRead->addParam(ID[i], ADDR_PRO_PRESENT_POSITION, LEN_PRO_PRESENT_POSITION);					//読み込みのデータを設定(現在角度)
 			//if( dxl_addparam_result != true) printf(" ID[%d] : groupBulkRead addParam failed\n", ID[i]);
 
-			//Bulkread present position 
+			//Bulkread present position
 			dxl_comm_result = groupBulkRead->txRxPacket();																				//返信データの読み込み
 			if(dxl_comm_result != COMM_SUCCESS) printf(" discommect \n");
 
@@ -348,7 +356,7 @@ bool CR7::Play_Back(){
 			dxl_addparam_result = groupBulkWrite->addParam(ID[i], ADDR_PRO_GOAL_POSITION, LEN_PRO_GOAL_POSITION, param_goal_position);	//書き込み用パケットにデータを追加
 			if(dxl_addparam_result != true) printf("goal pose error!\n");
 
-			// Bulkwrite goal position 
+			// Bulkwrite goal position
 			dxl_comm_result = groupBulkWrite->txPacket();
 			if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
 
@@ -375,9 +383,15 @@ void CR7::Close_port(){
  * @fn		main()
  * @brief	main
  */
-int main()
+int main(int argc, char **argv)
 {
-	CR7 cr;																																//クラスの宣言
+  if (argc <= 1){
+    printf("usage: example_CRANE-X7 <port>");
+    printf("specify serial port (e.g., COM1)");
+    return 0;
+  }
+
+	CR7 cr(argv[1]);																																//クラスの宣言
 	if(!cr.Open_port()) return 0;																										//COMポートを開く
 	if(!cr.Set_port_baudrate()) return 0;																								//ポートの通信レートを設定
 
@@ -414,7 +428,7 @@ int main()
 				cr.Move_Offset_Position();					//初期姿勢に移動
 				printf("--FINISH--\n");
 				break;
-		}	
+		}
 	}
 	cr.Close_port();																													//COMポートを閉じる
 	return 0;
